@@ -76,6 +76,18 @@ PrismDisk-Setup-1.0.0.exe --silent [--dir=C:\Path] [--no-desktop] [--no-context-
 "Uninstall PrismDisk.exe" --uninstall --silent [--keep-data]
 ```
 
+## Releasing
+
+1. Bump `version` in the root `Cargo.toml`.
+2. Add a `## x.y.z (date)` section at the top of `CHANGELOG.md` and commit.
+3. Run `.\release.ps1`. It builds the installer, tags `vx.y.z`, pushes, and publishes a GitHub release with that changelog section as the notes.
+
+Installed copies of PrismDisk check the latest GitHub release on launch, download the new installer in the background and offer **Restart & update**. The update runs the installer silently with the options the user originally chose.
+
+## Website
+
+The download site lives in `docs/` and is plain static HTML. It is served by GitHub Pages at https://luaxii.github.io/PrismDisk/ and can also be deployed to Vercel as-is (`vercel.json` points Vercel at `docs/`, no build step). The download button, version and changelog are read live from GitHub releases, with `docs/CHANGELOG.md` as a fallback.
+
 ## License
 
 MIT, see [installer/license.txt](installer/license.txt).

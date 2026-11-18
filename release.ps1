@@ -8,7 +8,7 @@ $Version = (Select-String -Path "$Root\Cargo.toml" -Pattern '^version\s*=\s*"([^
 $Tag = "v$Version"
 Write-Host "=== Releasing PrismDisk $Version ===" -ForegroundColor Cyan
 
-$Changelog = Get-Content "$Root\CHANGELOG.md" -Raw
+$Changelog = Get-Content "$Root\CHANGELOG.md" -Raw -Encoding UTF8
 $Pattern = "(?ms)^## " + [regex]::Escape($Version) + "[^\n]*\n(.*?)(?=^## |\z)"
 $Match = [regex]::Match($Changelog, $Pattern)
 if (-not $Match.Success) { throw "CHANGELOG.md has no '## $Version' section. Add release notes first." }
@@ -32,7 +32,7 @@ git push origin HEAD
 git push origin $Tag
 
 $NotesFile = New-TemporaryFile
-Set-Content -Path $NotesFile -Value $Notes -Encoding utf8
+[System.IO.File]::WriteAllText($NotesFile, $Notes, (New-Object System.Text.UTF8Encoding $false))
 $Args = @("release", "create", $Tag, $Installer, "--title", "PrismDisk $Version", "--notes-file", $NotesFile)
 if ($Draft) { $Args += "--draft" }
 gh @Args
