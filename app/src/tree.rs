@@ -333,7 +333,7 @@ impl Tree {
         ids.into_iter().map(|c| self.row(c, false)).collect()
     }
 
-    fn walk_paths(&self, start: u32, mut f: impl FnMut(u32, &str) -> bool) {
+    pub fn walk_paths(&self, start: u32, mut f: impl FnMut(u32, &str) -> bool) {
         let base = self.path(start);
         let mut stack: Vec<(u32, usize)> = vec![(start, base.len())];
         let mut path = base;
@@ -351,16 +351,6 @@ impl Tree {
                 for c in self.children(id) {
                     stack.push((c, l));
                 }
-            }
-        }
-    }
-
-    pub fn walk(&self, start: u32, mut f: impl FnMut(u32, &str, bool) -> bool) {
-        let mut stack = vec![start];
-        while let Some(id) = stack.pop() {
-            let dir = self.nodes[id as usize].is_dir();
-            if f(id, self.name(id), dir) && dir {
-                stack.extend(self.children(id));
             }
         }
     }

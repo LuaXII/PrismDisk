@@ -456,6 +456,7 @@ impl App {
                 "vis" => self.vis = if v.trim() == "sunburst" { Vis::Sunburst } else { Vis::Treemap },
                 "vis_h" => self.vis_h = v.trim().parse().unwrap_or(0.0),
                 "last_version" => self.last_version = v.trim().to_string(),
+                "media_scope" => self.media.scope = if v.trim() == "all" { media::Scope::All } else { media::Scope::Personal },
                 _ => {}
             }
         }
@@ -469,11 +470,12 @@ impl App {
         let _ = std::fs::write(
             p,
             format!(
-                "mode={}\nvis={}\nvis_h={}\nlast_version={}\n",
+                "mode={}\nvis={}\nvis_h={}\nlast_version={}\nmedia_scope={}\n",
                 if self.mode == Mode::Size { "size" } else { "alloc" },
                 if self.vis == Vis::Sunburst { "sunburst" } else { "treemap" },
                 self.vis_h,
-                self.last_version
+                self.last_version,
+                if self.media.scope == media::Scope::All { "all" } else { "personal" }
             ),
         );
     }

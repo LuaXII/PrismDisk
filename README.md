@@ -19,7 +19,7 @@ A fast, modern disk space analyzer for Windows. Like WizTree, it reads the NTFS 
 **Beyond WizTree**
 - Sunburst view
 - Duplicate finder by content (partial then full xxh3 hashing, cached), or by name + size, ranked by wasted space
-- Photos & Videos: gallery by month or folder with a timeline and lightbox, perceptual-hash grouping of re-sent, re-compressed, rotated or renamed copies, video matching by sampled frames, filters for screenshots, blurry shots, large videos and undated photos
+- Photos & Videos: your own photos, videos and screenshots by default (known folders, DCIM/WhatsApp folders, camera file names, Medal and SteelSeries Moments clip folders read from their settings; games, apps and code projects excluded), or all media; gallery by month or folder with a timeline and lightbox, perceptual-hash grouping of re-sent, re-compressed, rotated or renamed copies, video matching by sampled frames, filters for screenshots, blurry shots, large videos and undated photos
 - Encrypted container guard for VeraCrypt / TrueCrypt files
 - Smart Cleanup: detects temp folders, shader caches, browser caches, package-manager caches, crash dumps, Windows Update downloads and the Recycle Bin; empties them safely
 - "Older than" filter (30 days → 3 years) for finding stale files
@@ -65,7 +65,7 @@ Scans run on background threads; the tree stays in a shared `RwLock`, and the UI
 Prerequisites: Rust (MSVC toolchain). Nothing else.
 
 ```powershell
-.\build.ps1              # app + installer → dist\PrismDisk-Setup-1.1.0.exe
+.\build.ps1              # app + installer → dist\PrismDisk-Setup-1.1.1.exe
 .\build.ps1 -SkipApp     # rebuild only the installer
 cargo run -p prismdisk   # run the app (from an elevated terminal for MFT scans)
 cargo run -p prismdisk -- "D:\Games"     # open straight into a scan
@@ -83,7 +83,7 @@ Settings (size mode, view, panel height) are stored in `%APPDATA%\PrismDisk\sett
 Unattended:
 
 ```powershell
-PrismDisk-Setup-1.1.0.exe --silent [--dir=C:\Path] [--no-desktop] [--no-context-menu] [--no-admin]
+PrismDisk-Setup-1.1.1.exe --silent [--dir=C:\Path] [--no-desktop] [--no-context-menu] [--no-admin]
 "Uninstall PrismDisk.exe" --uninstall --silent [--keep-data]
 ```
 

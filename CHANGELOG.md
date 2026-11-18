@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 (2026-11-18)
+
+### Photos & Videos
+- **Shows your own photos by default.** The tab now looks at your Pictures, Videos, Screenshots (Win + Shift + S and Win + PrtScn), Camera Roll, Desktop and Downloads, plus phone and camera files anywhere (DCIM, WhatsApp, IMG_, PXL_ and similar) and game clips from Medal, SteelSeries Moments, NVIDIA, Radeon ReLive and Xbox Game Bar. Custom Medal and Moments clip folders are read from their settings, and their thumbnail caches are skipped. Game files, app images and code project assets are left out, even when they sit on the Desktop.
+- New **My photos / All media** switch. All media still shows every picture and video file in the scan. Your choice is remembered.
+
 ## 1.1.0 (2026-11-18)
 
 ### Photos & Videos

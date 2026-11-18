@@ -138,42 +138,242 @@ impl Item {
 pub const BLUR_LIMIT: f32 = 14.0;
 pub const LARGE_VIDEO: u64 = 500 << 20;
 
-const SKIP_DIRS: [&str; 30] = [
+const SYSTEM_DIRS: [&str; 8] = ["windows", "$recycle.bin", "system volume information", "$windows.~bt", "$windows.~ws", "$sysreset", "recovery", "msocache"];
+
+const SKIP_DIRS: [&str; 53] = [
     "windows", "program files", "program files (x86)", "programdata", "$recycle.bin", "system volume information", "appdata", "node_modules", ".git", ".cache",
     "steamapps", "$windows.~bt", "$windows.~ws", "msocache", "target", ".venv", "venv", "site-packages", "__pycache__", "vendor", "bower_components", ".gradle",
-    ".nuget", ".cargo", ".rustup", ".npm", ".vscode", ".idea", "dist-packages", "$sysreset",
+    ".nuget", ".cargo", ".rustup", ".npm", ".vscode", ".idea", "dist-packages", "$sysreset", "steamlibrary", "riot games", "epic games", "xboxgames",
+    "gog games", "ea games", "ubisoft", "battle.net", "my games", "windowsapps", "saved games", "assets", "textures", "sprites", "icons", "modtools",
+    "static", "public", "res", "resources", "thumbs", "thumbnails", ".thumbnails",
 ];
 
-pub fn collect(t: &Tree, start: u32, include_system: bool) -> Vec<Item> {
+const CODE_EXTS: [&str; 34] = [
+    "html", "htm", "js", "mjs", "cjs", "ts", "tsx", "jsx", "css", "scss", "vue", "svelte", "py", "rs", "cs", "cpp", "cc", "c", "h", "hpp", "java", "kt", "go",
+    "lua", "luau", "gd", "php", "rb", "swift", "gsc", "csc", "ps1", "bat", "sh",
+];
+
+const MEDIA_DIRS: [&str; 33] = [
+    "dcim", "camera roll", "camera uploads", "camera", "whatsapp images", "whatsapp video", "whatsapp animated gifs", "telegram desktop", "telegram images",
+    "telegram video", "screenshots", "pictures", "my pictures", "videos", "my videos", "photos", "fotos", "bilder", "icloud photos", "google photos", "saved pictures",
+    "snapchat", "instagram", "screen recordings", "medal", "steelseries moments", "clips", "captures", "game clips", "radeon relive", "shadowplay",
+    "outplayed", "highlights",
+];
+
+const PROJECT_FILES: [&str; 16] = [
+    ".git", "package.json", "cargo.toml", "pyproject.toml", "requirements.txt", "project.godot", "go.mod", "pom.xml", "build.gradle", "cmakelists.txt",
+    "makefile", "composer.json", "gemfile", "projectsettings", "pubspec.yaml", "deno.json",
+];
+
+const PROJECT_EXTS: [&str; 6] = ["sln", "csproj", "vcxproj", "uproject", "xcodeproj", "unityproj"];
+
+const APP_EXTS: [&str; 24] = [
+    "exe", "dll", "pak", "uasset", "umap", "unity3d", "assets", "resource", "vpk", "pck", "asar", "bsa", "ba2", "esm", "esp", "wad", "rpf", "forge", "big",
+    "sys", "so", "jar", "msi", "ucas",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Scope {
+    #[default]
+    Personal,
+    All,
+}
+
+pub fn personal_roots() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Com::CoTaskMemFree;
+        use windows::Win32::UI::Shell::*;
+        for id in [FOLDERID_Pictures, FOLDERID_Videos, FOLDERID_Desktop, FOLDERID_Downloads, FOLDERID_CameraRoll, FOLDERID_SavedPictures, FOLDERID_Screenshots] {
+            if let Ok(p) = SHGetKnownFolderPath(&id, KF_FLAG_DEFAULT, None) {
+                if let Ok(s) = p.to_string() {
+                    out.push(s);
+                }
+                CoTaskMemFree(Some(p.0 as *const _));
+            }
+        }
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        for sub in ["Pictures", "Videos", "iCloud Photos", "iCloudPhotos", "Dropbox\\Camera Uploads", "Dropbox\\Photos", "Google Drive\\Google Photos"] {
+            out.push(format!("{profile}\\{sub}"));
+        }
+    }
+    for var in ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"] {
+        if let Ok(od) = std::env::var(var) {
+            for sub in ["Pictures", "Videos", "Camera Roll", "Desktop"] {
+                out.push(format!("{od}\\{sub}"));
+            }
+        }
+    }
+    out.extend(clip_app_folders());
+    let mut out: Vec<String> = out.into_iter().map(|s| s.trim_end_matches('\\').to_lowercase()).filter(|s| s.len() > 3).collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn json_strings(text: &str, key: &str) -> Vec<String> {
+    let needle = format!("\"{key}\"");
     let mut out = Vec::new();
-    let mut ids = Vec::new();
-    t.walk(start, |id, name, is_dir| {
-        if is_dir {
-            return include_system || id == start || !SKIP_DIRS.contains(&name.to_lowercase().as_str());
+    let mut rest = text;
+    while let Some(i) = rest.find(&needle) {
+        rest = &rest[i + needle.len()..];
+        let after = rest.trim_start();
+        let Some(after) = after.strip_prefix(':') else { continue };
+        let Some(after) = after.trim_start().strip_prefix('"') else { continue };
+        let mut val = String::new();
+        let mut chars = after.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => break,
+                '\\' => {
+                    if let Some(n) = chars.next() {
+                        val.push(n);
+                    }
+                }
+                _ => val.push(c),
+            }
         }
-        if let Some(k) = kind_of(name) {
-            ids.push((id, k));
+        if !val.is_empty() {
+            out.push(val);
         }
-        false
-    });
-    for (id, kind) in ids {
-        let n = &t.nodes[id as usize];
-        if kind == Kind::Image && n.size < 8 * 1024 && !include_system {
-            continue;
-        }
-        let name = t.name(id).to_string();
-        out.push(Item {
-            id,
-            path: t.path(id),
-            name,
-            size: n.size,
-            modified: n.modified,
-            modified_ms: crate::tree::filetime_to_unix_ms(n.modified),
-            kind,
-            meta: None,
-        });
     }
     out
+}
+
+fn moments_folders(db: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(db).replace("\\\\", "\\");
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (i, _) in text.match_indices(":\\") {
+        if i == 0 {
+            continue;
+        }
+        let drive = text.as_bytes()[i - 1];
+        if !drive.is_ascii_alphabetic() {
+            continue;
+        }
+        let tail: String = text[i - 1..].chars().take_while(|c| !c.is_control() && !matches!(c, '"' | '<' | '>' | '|' | '*' | '?')).take(260).collect();
+        let lower = tail.to_lowercase();
+        let Some(end) = [".mp4", ".mkv", ".webm", ".mov"].iter().filter_map(|e| lower.find(e)).min() else { continue };
+        let file = &tail[..end];
+        let Some((dir, _)) = file.rsplit_once('\\') else { continue };
+        let dir = dir.trim_end_matches("\\thumbs").to_string();
+        *counts.entry(dir).or_default() += 1;
+    }
+    counts.into_keys().collect()
+}
+
+pub fn clip_app_folders() -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        if let Ok(text) = std::fs::read_to_string(format!("{appdata}\\Medal\\store\\settings.json")) {
+            out.extend(json_strings(&text, "clipFolder"));
+            out.extend(json_strings(&text, "screenshotFolder"));
+        }
+    }
+    if let Ok(pd) = std::env::var("ProgramData") {
+        let db = format!("{pd}\\SteelSeries\\GG\\apps\\moments\\db\\database.db");
+        if std::fs::metadata(&db).map(|m| m.len() < 64 << 20).unwrap_or(false) {
+            if let Ok(bytes) = std::fs::read(&db) {
+                out.extend(moments_folders(&bytes));
+            }
+        }
+    }
+    out
+}
+
+fn ext_lower(name: &str) -> Option<String> {
+    name.rsplit_once('.').filter(|(s, _)| !s.is_empty()).map(|(_, e)| e.to_ascii_lowercase())
+}
+
+pub fn camera_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    let stem = n.rsplit_once('.').map(|(s, _)| s).unwrap_or(&n);
+    const PREFIXES: [&str; 24] = [
+        "img_", "img-", "vid_", "vid-", "pxl_", "mvimg_", "pano_", "burst", "dsc_", "dsc0", "dscn", "dscf", "gopr", "dji_", "photo_", "video_", "screenshot",
+        "screen shot", "signal-", "snapchat-", "received_", "wp_2", "bildschirmfoto", "captura",
+    ];
+    if PREFIXES.iter().any(|p| stem.starts_with(p)) {
+        return true;
+    }
+    let digits_after = |prefix: &str, min: usize| stem.strip_prefix(prefix).map(|r| r.chars().take_while(|c| c.is_ascii_digit()).count() >= min).unwrap_or(false);
+    if digits_after("img", 4) || digits_after("vid", 4) || digits_after("dsc", 4) || digits_after("gh0", 4) || digits_after("gx0", 4) || digits_after("mvi_", 4) {
+        return true;
+    }
+    let d: Vec<char> = stem.chars().take(15).collect();
+    d.len() == 15 && stem.starts_with("20") && d[..8].iter().all(|c| c.is_ascii_digit()) && (d[8] == '_' || d[8] == '-') && d[9..].iter().all(|c| c.is_ascii_digit())
+}
+
+fn is_project_or_app(t: &Tree, id: u32) -> bool {
+    for c in t.children(id) {
+        let name = t.name(c).to_ascii_lowercase();
+        if PROJECT_FILES.contains(&name.as_str()) {
+            return true;
+        }
+        if let Some(e) = ext_lower(&name) {
+            if PROJECT_EXTS.contains(&e.as_str()) || (!t.nodes[c as usize].is_dir() && (APP_EXTS.contains(&e.as_str()) || CODE_EXTS.contains(&e.as_str()))) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn in_roots(folder_lower: &str, roots: &[String]) -> bool {
+    roots.iter().any(|r| folder_lower == r || (folder_lower.starts_with(r.as_str()) && folder_lower.as_bytes().get(r.len()) == Some(&b'\\')))
+}
+
+fn media_folder(folder_lower: &str) -> bool {
+    folder_lower.split('\\').skip(1).any(|seg| MEDIA_DIRS.contains(&seg))
+}
+
+pub fn collect(t: &Tree, start: u32, scope: Scope) -> Vec<Item> {
+    let mut roots = if scope == Scope::Personal { personal_roots() } else { Vec::new() };
+    let start_path = t.path(start);
+    if start_path.trim_end_matches('\\').len() > 2 {
+        roots.push(start_path.trim_end_matches('\\').to_lowercase());
+    }
+    let mut ids = Vec::new();
+    t.walk_paths(start, |id, path| {
+        let name = t.name(id);
+        if t.nodes[id as usize].is_dir() {
+            if id == start {
+                return true;
+            }
+            let lower = name.to_lowercase();
+            if scope == Scope::Personal {
+                let full = path.trim_end_matches('\\').to_lowercase();
+                let on_way = roots.iter().any(|r| *r == full || (r.starts_with(full.as_str()) && r.as_bytes().get(full.len()) == Some(&b'\\')));
+                if on_way {
+                    return true;
+                }
+            }
+            return match scope {
+                Scope::All => !SYSTEM_DIRS.contains(&lower.as_str()),
+                Scope::Personal => !SKIP_DIRS.contains(&lower.as_str()) && !lower.starts_with('.') && !is_project_or_app(t, id),
+            };
+        }
+        let Some(kind) = kind_of(name) else { return false };
+        let n = &t.nodes[id as usize];
+        if kind == Kind::Image && n.size < 8 * 1024 {
+            return false;
+        }
+        if scope == Scope::Personal {
+            let folder = path[..path.len().saturating_sub(name.len() + 1)].to_lowercase();
+            if !(in_roots(&folder, &roots) || media_folder(&folder) || camera_name(name)) {
+                return false;
+            }
+        }
+        ids.push((id, kind, path.to_string()));
+        false
+    });
+    ids.into_iter()
+        .map(|(id, kind, path)| {
+            let n = &t.nodes[id as usize];
+            Item { id, name: t.name(id).to_string(), path, size: n.size, modified: n.modified, modified_ms: crate::tree::filetime_to_unix_ms(n.modified), kind, meta: None }
+        })
+        .collect()
 }
 
 fn dct_table() -> &'static [f32; 1024] {
@@ -925,6 +1125,57 @@ mod tests {
             println!("{:?}: {} groups, {} files, largest {}, {} bytes reclaimable", k, g.len(), g.iter().map(|g| g.items.len()).sum::<usize>(), largest, g.iter().map(|g| g.wasted).sum::<u64>());
         }
         println!("peak private {} MB", crate::sys::peak_private_mb());
+    }
+
+    #[test]
+    #[ignore]
+    fn personal_scope_report() {
+        let drive = std::env::var("PD_SCOPE_DRIVE").unwrap_or_else(|_| "C:\\".into());
+        let ctl = crate::scan::ScanCtl::default();
+        let (t, _) = crate::backend::run_scan("drive", &drive, &ctl).expect("scan");
+        println!("clip app folders: {:?}", clip_app_folders());
+        for scope in [Scope::Personal, Scope::All] {
+            let items = collect(&t, t.root, scope);
+            let mut by: HashMap<String, usize> = HashMap::new();
+            for it in &items {
+                *by.entry(it.folder().to_string()).or_default() += 1;
+            }
+            let mut v: Vec<(String, usize)> = by.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            println!("{:?}: {} files in {} folders", scope, items.len(), v.len());
+            if scope == Scope::Personal {
+                for (f, n) in v.iter().take(40) {
+                    println!("  {n:>6}  {f}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn clip_app_settings() {
+        let medal = r#"{"theme":"dark","clipFolder":"D:\\Clips\\Medal","clipSoundPath":"default"}"#;
+        assert_eq!(json_strings(medal, "clipFolder"), vec![r"D:\Clips\Medal".to_string()]);
+        let mut db = b"SQLite format 3\0\0junk".to_vec();
+        db.extend_from_slice(br"E:\Game Clips\Moments\Battlefield 6__2025-10-31.mp4");
+        db.extend_from_slice(b"\0\x05");
+        db.extend_from_slice(br"E:\\Game Clips\\Moments\\thumbs\\Battlefield 6__2025-10-31.png.mp4");
+        let folders = moments_folders(&db);
+        assert_eq!(folders, vec![r"E:\Game Clips\Moments".to_string()]);
+    }
+
+    #[test]
+    fn personal_names() {
+        for n in ["IMG_20240612_181502.jpg", "IMG-20240613-WA0007.jpg", "VID_20230101_120000.mp4", "PXL_20250101_101010123.jpg", "DSC01234.JPG", "Screenshot 2026-11-18 081502.png", "20240612_181502.jpg", "GOPR0042.MP4", "signal-2024-01-01-120000.jpg", "IMG1234.HEIC"] {
+            assert!(camera_name(n), "{n}");
+        }
+        for n in ["icon.png", "texture_diffuse.png", "hero-character.mov", "logo@2x.png", "background.jpg", "image.png", "splash_screen.png"] {
+            assert!(!camera_name(n), "{n}");
+        }
+        assert!(media_folder(r"c:\users\a\onedrive\pictures\camera roll"));
+        assert!(!media_folder(r"c:\games\thing\textures"));
+        let roots = vec![r"c:\users\a\pictures".to_string()];
+        assert!(in_roots(r"c:\users\a\pictures\2024", &roots));
+        assert!(!in_roots(r"c:\users\a\pictures2", &roots));
     }
 
     #[test]

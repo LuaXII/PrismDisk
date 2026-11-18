@@ -67,7 +67,7 @@ pub struct MediaState {
     pub filter: MFilter,
     pub by_folder: bool,
     pub zoom: usize,
-    pub include_system: bool,
+    pub scope: media::Scope,
     pub sel: HashSet<u32>,
     pub marked: HashSet<u32>,
     pub lightbox: Option<usize>,
@@ -95,7 +95,7 @@ impl Default for MediaState {
             filter: MFilter::All,
             by_folder: false,
             zoom: 1,
-            include_system: false,
+            scope: media::Scope::Personal,
             sel: HashSet::new(),
             marked: HashSet::new(),
             lightbox: None,
@@ -161,9 +161,9 @@ impl MediaState {
             j.cancel.store(true, Ordering::Relaxed);
             j.hashing.cancel.store(true, Ordering::Relaxed);
         }
-        let keep = (self.view, self.filter, self.by_folder, self.zoom, self.include_system);
+        let keep = (self.view, self.filter, self.by_folder, self.zoom, self.scope);
         *self = MediaState::default();
-        (self.view, self.filter, self.by_folder, self.zoom, self.include_system) = keep;
+        (self.view, self.filter, self.by_folder, self.zoom, self.scope) = keep;
     }
 
     fn rebuild(&mut self) {
@@ -317,7 +317,7 @@ impl App {
         let seq = self.media.seq;
         let job = Arc::new(media::Job::default());
         self.media.job = Some(job.clone());
-        let (id, sys) = (self.focus, self.media.include_system);
+        let (id, sys) = (self.focus, self.media.scope);
         let (shared, tx, ctx) = (self.shared.clone(), self.sender(), self.ctx.clone());
         std::thread::spawn(move || {
             let mut items = {
@@ -561,18 +561,16 @@ impl App {
                 self.media.jump = Some(0.0);
             }
         }
-        let sys_label = "Include app folders";
-        let sw = text_w(&right, sys_label, f(11.5)) + 26.0;
-        let (sr, _) = right.allocate_exact_size(vec2(sw, 26.0), Sense::hover());
-        let sresp = right.interact(sr, Id::new("msys"), Sense::click());
-        checkbox(right.painter(), Rect::from_min_size(pos2(sr.left(), sr.center().y - 8.0), vec2(16.0, 16.0)), self.media.include_system, INDIGO);
-        right.painter().text(pos2(sr.left() + 24.0, sr.center().y), Align2::LEFT_CENTER, sys_label, f(11.5), if sresp.hovered() { TEXT } else { MUTED });
-        if sresp.hovered() {
-            right.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        }
-        if sresp.clicked() {
-            self.media.include_system = !self.media.include_system;
-            self.load_media();
+        let cur_scope = if self.media.scope == media::Scope::Personal { 0 } else { 1 };
+        let scope_resp = right.horizontal(|ui| segmented(ui, "mscope", &[("My photos", None), ("All media", None)], cur_scope, true));
+        scope_resp.response.on_hover_text("My photos: your Pictures, Videos, Screenshots, Camera Roll, Desktop and Downloads, plus camera and phone files anywhere. Games, apps and code projects are left out.\nAll media: every picture and video file in this scan.");
+        if let Some(i) = scope_resp.inner {
+            let want = if i == 0 { media::Scope::Personal } else { media::Scope::All };
+            if want != self.media.scope {
+                self.media.scope = want;
+                self.save_settings();
+                self.load_media();
+            }
         }
 
         let foot = Rect::from_min_max(pos2(body.left(), body.bottom() - 40.0), body.max);
@@ -680,7 +678,7 @@ impl App {
             if self.media.loading {
                 self.empty_state(ui, area, "Looking for photos and videos", "Reading the scan for pictures and video files.");
             } else {
-                self.empty_state(ui, area, "No photos or videos here", "Scan a drive or folder that holds pictures, or tick Include app folders to look inside program and app data folders too.");
+                self.empty_state(ui, area, "No photos or videos here", "Your own photos, videos and screenshots show up here. Switch to All media to see every picture and video file in this scan.");
             }
             return;
         }
