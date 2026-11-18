@@ -1,0 +1,7 @@
+/target/
+/dist/
+/.tools/
+/.agents/
+/nul
+/prismdisk_modern_disk_space_analyzer.html
+*.part
