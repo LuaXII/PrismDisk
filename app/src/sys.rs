@@ -97,3 +97,25 @@ pub fn shell_open(target: &str, args: &str) -> bool {
 pub fn shell_open(target: &str, _args: &str) -> bool {
     Command::new("xdg-open").arg(target).spawn().is_ok()
 }
+
+#[cfg(windows)]
+pub fn background_thread() {
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+    unsafe {
+        let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn background_thread() {}
+
+#[cfg(all(windows, test))]
+pub fn peak_private_mb() -> u64 {
+    use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    let mut c = PROCESS_MEMORY_COUNTERS { cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32, ..Default::default() };
+    unsafe {
+        let _ = GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb);
+    }
+    (c.PeakPagefileUsage / (1 << 20)) as u64
+}

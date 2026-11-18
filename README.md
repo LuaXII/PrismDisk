@@ -18,7 +18,9 @@ A fast, modern disk space analyzer for Windows. Like WizTree, it reads the NTFS 
 
 **Beyond WizTree**
 - Sunburst view
-- Duplicate finder (same name + exact size), ranked by wasted space
+- Duplicate finder by content (partial then full xxh3 hashing, cached), or by name + size, ranked by wasted space
+- Photos & Videos: gallery by month or folder with a timeline and lightbox, perceptual-hash grouping of re-sent, re-compressed, rotated or renamed copies, video matching by sampled frames, filters for screenshots, blurry shots, large videos and undated photos
+- Encrypted container guard for VeraCrypt / TrueCrypt files
 - Smart Cleanup: detects temp folders, shader caches, browser caches, package-manager caches, crash dumps, Windows Update downloads and the Recycle Bin; empties them safely
 - "Older than" filter (30 days → 3 years) for finding stale files
 - Cancelable scans with a live progress overlay
@@ -35,6 +37,13 @@ PrismDisk/
 │   ├── src/mft.rs          # NTFS MFT reader (fixups, data runs, extension records)
 │   ├── src/scan.rs         # scan control, parallel folder walk, WizTree CSV import/export
 │   ├── src/tree.rs         # compact arena tree + queries (children, find, treemap, sunburst, dups, cleanup)
+│   ├── src/hashing.rs      # content duplicates: size, partial and full xxh3 hashes
+│   ├── src/media.rs        # media index, pHash, sharpness, star clustering of similar photos/videos
+│   ├── src/decode.rs       # WIC image decode + EXIF, Media Foundation frames, shell thumbnails
+│   ├── src/gallery.rs      # Photos & Videos tab, similar groups, timeline, lightbox
+│   ├── src/thumbs.rs       # background thumbnail loader with an LRU texture budget
+│   ├── src/cache.rs        # on-disk caches in %LOCALAPPDATA%\PrismDisk
+│   ├── src/container.rs    # encrypted container detection
 │   ├── src/backend.rs      # scan orchestration, delete (with system-folder protection), export
 │   ├── src/app.rs          # app state, background jobs, actions
 │   ├── src/ui.rs           # every screen, drawn to match the original design
@@ -56,14 +65,16 @@ Scans run on background threads; the tree stays in a shared `RwLock`, and the UI
 Prerequisites: Rust (MSVC toolchain). Nothing else.
 
 ```powershell
-.\build.ps1              # app + installer → dist\PrismDisk-Setup-1.0.0.exe
+.\build.ps1              # app + installer → dist\PrismDisk-Setup-1.1.0.exe
 .\build.ps1 -SkipApp     # rebuild only the installer
 cargo run -p prismdisk   # run the app (from an elevated terminal for MFT scans)
 cargo run -p prismdisk -- "D:\Games"     # open straight into a scan
 cargo test -p prismdisk  # unit tests;  add `--release -- --ignored --nocapture` for a real C: scan (elevated)
 ```
 
-Settings (size mode, view, panel height) are stored in `%APPDATA%\PrismDisk\settings.ini`.
+Settings (size mode, view, panel height) are stored in `%APPDATA%\PrismDisk\settings.ini`. Media fingerprints and content hashes are cached in `%LOCALAPPDATA%\PrismDisk` (`media.bin`, `hashes.bin`). New photos and videos are analyzed by `PrismDisk.exe --media-index <list>`, a short-lived helper process, so codec memory never stays in the app.
+
+`cargo test -p prismdisk --release real_files -- --ignored --nocapture` with `PD_MEDIA_DIR` set prints the analysis and grouping of a folder; `bench_dir` with `PD_BENCH_DIR` times a whole tree.
 
 ## Installer
 
@@ -72,7 +83,7 @@ Settings (size mode, view, panel height) are stored in `%APPDATA%\PrismDisk\sett
 Unattended:
 
 ```powershell
-PrismDisk-Setup-1.0.0.exe --silent [--dir=C:\Path] [--no-desktop] [--no-context-menu] [--no-admin]
+PrismDisk-Setup-1.1.0.exe --silent [--dir=C:\Path] [--no-desktop] [--no-context-menu] [--no-admin]
 "Uninstall PrismDisk.exe" --uninstall --silent [--keep-data]
 ```
 

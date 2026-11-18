@@ -11,6 +11,10 @@ use crate::fsinfo::{self, DriveInfo};
 use crate::scan::ScanCtl;
 use crate::theme::{self, hex, hsl};
 use crate::tree::{self, Mode, Row, TmRect, Tree, CLEAN_RULES};
+use crate::gallery::MediaState;
+use crate::hashing;
+use crate::media;
+use crate::thumbs::Thumbs;
 use crate::update::{self, Release};
 use crate::{sys, viz};
 use std::sync::atomic::AtomicU64;
@@ -87,6 +91,7 @@ pub enum Tab {
     Search,
     Dups,
     Clean,
+    Media,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -164,6 +169,8 @@ pub enum Msg {
     Picked(Pick, Option<PathBuf>),
     UpdateChecked(Result<Option<Release>, String>, bool),
     UpdateDownloaded(Release, Result<PathBuf, String>),
+    MediaList(u64, Vec<media::Item>),
+    MediaIndexed(u64, Vec<media::Item>, Vec<media::Group>, bool),
 }
 
 #[derive(Clone)]
@@ -223,6 +230,8 @@ pub struct Modal {
     pub list: Vec<(String, u64)>,
     pub ok: String,
     pub danger: bool,
+    pub ack: Option<(String, bool)>,
+    pub lock: bool,
     pub action: ModalAction,
 }
 
@@ -234,7 +243,7 @@ pub struct ScanState {
 
 pub const MIN_SIZES: [(u64, &str); 4] = [(0, "Any size"), (1 << 20, "≥ 1 MB"), (100 << 20, "≥ 100 MB"), (1 << 30, "≥ 1 GB")];
 pub const AGES: [(u32, &str); 5] = [(0, "Any age"), (30, "Older than 30 days"), (180, "Older than 6 months"), (365, "Older than 1 year"), (1095, "Older than 3 years")];
-pub const DUP_MINS: [(u64, &str); 3] = [(1 << 20, "≥ 1 MB"), (10 << 20, "≥ 10 MB"), (100 << 20, "≥ 100 MB")];
+pub const DUP_MINS: [(u64, &str); 4] = [(100 << 10, "≥ 100 KB"), (1 << 20, "≥ 1 MB"), (10 << 20, "≥ 10 MB"), (100 << 20, "≥ 100 MB")];
 pub const PALETTE: [u32; 16] = [
     0x6366f1, 0x0ea5e9, 0x10b981, 0xf59e0b, 0xa855f7, 0xec4899, 0x14b8a6, 0xf97316, 0x3b82f6, 0x84cc16, 0xef4444, 0x06b6d4, 0x8b5cf6, 0xeab308,
     0x22c55e, 0xf43f5e,
@@ -285,6 +294,10 @@ pub struct App {
     pub find_status: String,
     pub dups: Option<Vec<DupGroup>>,
     pub dup_min: usize,
+    pub dup_content: bool,
+    pub dup_job: Option<Arc<hashing::Job>>,
+    pub media: MediaState,
+    pub thumbs: Thumbs,
     pub clean: Option<Vec<CleanItem>>,
     pub clean_sel: HashSet<u32>,
     pub clean_pill: u64,
@@ -372,6 +385,10 @@ impl App {
             find_status: String::new(),
             dups: None,
             dup_min: 1,
+            dup_content: true,
+            dup_job: None,
+            media: MediaState::default(),
+            thumbs: Thumbs::new(&cc.egui_ctx),
             clean: None,
             clean_sel: HashSet::new(),
             clean_pill: 0,
@@ -479,6 +496,14 @@ impl App {
         self.seq
     }
 
+    pub fn next_seq_pub(&mut self) -> u64 {
+        self.next_seq()
+    }
+
+    pub fn sender(&self) -> Sender<Msg> {
+        self.tx.clone()
+    }
+
     fn spawn<F: FnOnce(&Shared) -> Msg + Send + 'static>(&self, f: F) {
         let shared = self.shared.clone();
         let tx = self.tx.clone();
@@ -539,6 +564,8 @@ impl App {
         self.clean_sel.clear();
         self.clean = None;
         self.dups = None;
+        self.media.reset();
+        self.thumbs.clear();
         self.find.clear();
         self.stale_search = true;
         self.stale_dups = true;
@@ -707,6 +734,7 @@ impl App {
 
     pub fn set_focus(&mut self, id: u32) {
         self.focus = id;
+        self.media.reset();
         self.stale_search = true;
         self.stale_dups = true;
         self.stale_clean = true;
@@ -733,7 +761,7 @@ impl App {
             Tab::Search => self.run_find(),
             Tab::Dups => self.load_dups(),
             Tab::Clean => self.load_clean(),
-            Tab::Tree => {}
+            Tab::Tree | Tab::Media => {}
         }
     }
 
@@ -767,6 +795,10 @@ impl App {
     }
 
     pub fn switch_tab(&mut self, tab: Tab) {
+        if self.tab == Tab::Media && tab != Tab::Media {
+            self.thumbs.clear();
+            self.media.lightbox = None;
+        }
         self.tab = tab;
         match tab {
             Tab::Search => {
@@ -816,25 +848,58 @@ impl App {
     pub fn load_dups(&mut self) {
         self.stale_dups = false;
         self.dups = None;
+        if let Some(j) = self.dup_job.take() {
+            j.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let seq = self.next_seq();
         self.seq_dups = seq;
         let (id, min) = (self.focus, DUP_MINS[self.dup_min].0);
+        if !self.dup_content {
+            self.spawn(move |shared| {
+                let g = shared.read().unwrap();
+                let groups = g
+                    .as_ref()
+                    .filter(|t| t.valid(id))
+                    .map(|t| {
+                        t.duplicates(id, min, 300)
+                            .into_iter()
+                            .map(|(size, ids)| DupGroup {
+                                size,
+                                wasted: size * (ids.len() as u64 - 1),
+                                items: ids.into_iter().map(|i| t.row(i, true)).collect(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Msg::Dups(seq, groups)
+            });
+            return;
+        }
+        let job = Arc::new(hashing::Job::default());
+        self.dup_job = Some(job.clone());
         self.spawn(move |shared| {
+            let files = {
+                let g = shared.read().unwrap();
+                g.as_ref().filter(|t| t.valid(id)).map(|t| t.content_candidates(id, min)).unwrap_or_default()
+            };
+            let found = hashing::exact_groups(files, &job);
+            if job.cancelled() {
+                return Msg::Dups(0, Vec::new());
+            }
             let g = shared.read().unwrap();
-            let groups = g
-                .as_ref()
-                .filter(|t| t.valid(id))
-                .map(|t| {
-                    t.duplicates(id, min, 300)
-                        .into_iter()
-                        .map(|(size, ids)| DupGroup {
-                            size,
-                            wasted: size * (ids.len() as u64 - 1),
-                            items: ids.into_iter().map(|i| t.row(i, true)).collect(),
-                        })
-                        .collect()
+            let Some(t) = g.as_ref() else { return Msg::Dups(seq, Vec::new()) };
+            let mut groups: Vec<DupGroup> = found
+                .into_iter()
+                .map(|grp| {
+                    let size = grp[0].size;
+                    let mut items: Vec<Row> = grp.iter().filter(|f| t.valid(f.id)).map(|f| t.row(f.id, true)).collect();
+                    items.sort_by_key(|r| r.modified);
+                    DupGroup { size, wasted: size * (items.len().max(1) as u64 - 1), items }
                 })
-                .unwrap_or_default();
+                .filter(|g| g.items.len() > 1)
+                .collect();
+            groups.sort_unstable_by(|a, b| b.wasted.cmp(&a.wasted));
+            groups.truncate(500);
             Msg::Dups(seq, groups)
         });
     }
@@ -1002,17 +1067,52 @@ impl App {
             self.toast("Protected system location", format!("PrismDisk won't delete {p} because Windows needs it."), true);
             return;
         }
+        let containers = self.containers_in(&rows);
         let total: u64 = rows.iter().map(|r| r.alloc).sum();
         let what = if rows.len() == 1 { format!("“{}”", rows[0].name) } else { format!("{} items", rows.len()) };
         self.modal = Some(Modal {
             title: if permanent { format!("Permanently delete {what}?") } else { format!("Move {what} to the Recycle Bin?") },
-            warn: permanent.then(|| "This cannot be undone.".to_string()),
+            warn: if containers.is_empty() {
+                permanent.then(|| "This cannot be undone.".to_string())
+            } else {
+                let (lead, it) = if containers.len() == 1 {
+                    ("This looks like an encrypted container (VeraCrypt or TrueCrypt).", "it")
+                } else {
+                    ("These look like encrypted containers (VeraCrypt or TrueCrypt).", "them")
+                };
+                Some(if permanent {
+                    format!("{lead} Every file stored inside goes with {it}, and this cannot be undone.")
+                } else {
+                    format!("{lead} Every file stored inside goes with {it}.")
+                })
+            },
             body: if permanent { format!("{} total.", fmt_bytes(total)) } else { format!("You can restore it from the Recycle Bin later. {} total.", fmt_bytes(total)) },
-            list: rows.iter().map(|r| (r.path.clone().unwrap_or_default(), r.alloc)).collect(),
+            list: if containers.is_empty() {
+                rows.iter().map(|r| (r.path.clone().unwrap_or_default(), r.alloc)).collect()
+            } else {
+                containers.clone()
+            },
             ok: if permanent { "Delete permanently".into() } else { "Move to Recycle Bin".into() },
             danger: true,
+            ack: (!containers.is_empty()).then(|| {
+                let what = if containers.len() == 1 { "this container" } else { "these containers" };
+                (format!("I understand everything inside {what} will be lost"), false)
+            }),
+            lock: !containers.is_empty(),
             action: ModalAction::Delete(rows.iter().map(|r| r.id).collect(), permanent),
         });
+    }
+
+    fn containers_in(&self, rows: &[Row]) -> Vec<(String, u64)> {
+        let targets: Vec<crate::container::Target> = rows
+            .iter()
+            .map(|r| crate::container::Target { path: r.path.clone().unwrap_or_default(), name: r.name.clone(), dir: r.dir, size: r.size })
+            .collect();
+        let g = self.shared.read().unwrap();
+        let Some(t) = g.as_ref() else { return Vec::new() };
+        crate::container::find(&targets, |path, limit| {
+            t.find_path(path).map(|id| t.files_where(id, limit, crate::container::is_candidate)).unwrap_or_default()
+        })
     }
 
     pub fn confirm_clean(&mut self) {
@@ -1032,6 +1132,8 @@ impl App {
             list: items.iter().map(|c| (c.row.path.clone().unwrap_or_default(), c.row.alloc)).collect(),
             ok: "Clean now".into(),
             danger: false,
+            ack: None,
+            lock: false,
             action: ModalAction::Clean(items.iter().map(|c| c.row.id).collect()),
         });
     }
@@ -1061,6 +1163,7 @@ impl App {
         }
         self.after_focus_change();
         self.load_clean_pill();
+        self.media_after_delete();
     }
 
     pub fn check_updates(&mut self, manual: bool) {
@@ -1149,7 +1252,12 @@ impl App {
                     };
                     self.find = rows;
                 }
-                Msg::Dups(seq, g) if seq == self.seq_dups => self.dups = Some(g),
+                Msg::Dups(seq, g) if seq == self.seq_dups => {
+                    self.dups = Some(g);
+                    self.dup_job = None;
+                }
+                Msg::MediaList(seq, items) => self.media_on_list(seq, items),
+                Msg::MediaIndexed(seq, items, groups, fresh) => self.media_on_indexed(seq, items, groups, fresh),
                 Msg::Clean(seq, items) if seq == self.seq_clean => {
                     let keep: HashSet<u32> = items.iter().map(|c| c.row.id).collect();
                     self.clean_sel.retain(|id| keep.contains(id));

@@ -3,19 +3,33 @@
 mod about;
 mod app;
 mod backend;
+mod cache;
+mod container;
+mod decode;
 mod fsinfo;
+mod gallery;
+mod hashing;
 mod icons;
 mod md;
+mod media;
 mod mft;
 mod scan;
 mod sys;
 mod theme;
+mod thumbs;
 mod tree;
 mod ui;
 mod update;
 mod viz;
 
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--media-index") {
+        if let Some(list) = args.get(i + 1) {
+            media::child_main(list);
+        }
+        return Ok(());
+    }
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../icons/128x128@2x.png")).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title(format!("PrismDisk {}", env!("CARGO_PKG_VERSION")))

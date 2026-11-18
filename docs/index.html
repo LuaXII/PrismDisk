@@ -144,6 +144,16 @@ section { padding: 110px 0 0; }
 .feature h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
 .feature p { margin: 0; color: var(--muted); font-size: 15px; }
 .feature.wide { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: center; }
+.sim { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sim figure { margin: 0; min-width: 0; }
+.sim .ph { position: relative; width: 100%; height: 0; padding-top: 100%; border-radius: 12px; overflow: hidden; background: radial-gradient(circle at 30% 35%, #34d399 0 16%, transparent 17%), radial-gradient(circle at 68% 30%, #fbbf24 0 11%, transparent 12%), radial-gradient(circle at 58% 70%, #38bdf8 0 21%, transparent 22%), radial-gradient(circle at 22% 78%, #f472b6 0 12%, transparent 13%), linear-gradient(135deg, #7c3aed, #db2777); border: 2px solid transparent; }
+.sim .ph.soft { filter: saturate(.85) contrast(.92); }
+.sim .ph.rot { transform: rotate(90deg); }
+.sim .ph.mark { border-color: #f43f5e; box-shadow: inset 0 0 0 999px rgba(244,63,94,.1); }
+.sim .ph b { position: absolute; top: 7px; right: 7px; font: 700 9px/1 var(--mono); padding: 4px 7px; border-radius: 99px; background: #10b981; color: #04130d; letter-spacing: .04em; }
+.sim .ph.rot b { transform: rotate(-90deg); }
+.sim figcaption { margin-top: 7px; font: 500 10.5px/1.4 var(--mono); color: var(--muted); }
+.sim figcaption span { display: block; color: var(--text); font-family: inherit; }
 .speed { display: flex; flex-direction: column; gap: 14px; }
 .speed .lane { font-size: 13px; color: var(--muted); }
 .speed .lane div { display: flex; justify-content: space-between; margin-bottom: 6px; }
@@ -236,6 +246,8 @@ footer .links { margin-left: auto; }
   <symbol id="bolt" viewBox="0 0 24 24"><path fill="currentColor" d="M13.5 2 4 14h7l-1.5 8L19 10h-7z"/></symbol>
   <symbol id="grid" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 3h11v11H3zM14 3h7v6h-7zM14 9h7v12h-7zM3 14h11v7H3z"/></symbol>
   <symbol id="sparkle" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c.4 3.6 2.4 5.6 6 6-3.6.4-5.6 2.4-6 6-.4-3.6-2.4-5.6-6-6 3.6-.4 5.6-2.4 6-6zM18.5 14c.2 1.8 1.2 2.8 3 3-1.8.2-2.8 1.2-3 3-.2-1.8-1.2-2.8-3-3 1.8-.2 2.8-1.2 3-3z"/></symbol>
+  <symbol id="photo" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="9.5" r="1.8" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="m21 16-5.5-5.5L5 20"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1zM8 11V7.5a4 4 0 0 1 8 0V11M12 15v2"/></symbol>
   <symbol id="dup" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M8 8h11v13H8zM5 16V3h11"/></symbol>
   <symbol id="search" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="m21 21-5.2-5.2M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/></symbol>
   <symbol id="shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/></symbol>
@@ -339,7 +351,7 @@ footer .links { margin-left: auto; }
       <div class="feature reveal">
         <div class="ico" style="background:rgba(244,63,94,.14);color:#fda4af"><svg><use href="#dup"/></svg></div>
         <h3>Duplicate finder</h3>
-        <p>Groups files with the same name and size, ranked by how much space the extra copies waste.</p>
+        <p>Compares file contents, so renamed copies are caught too. Groups are ranked by how much space the extra copies waste.</p>
       </div>
       <div class="feature reveal">
         <div class="ico" style="background:rgba(245,158,11,.14);color:#fcd34d"><svg><use href="#search"/></svg></div>
@@ -350,6 +362,23 @@ footer .links { margin-left: auto; }
         <div class="ico" style="background:rgba(168,85,247,.15);color:#d8b4fe"><svg><use href="#shield"/></svg></div>
         <h3>Safe by design</h3>
         <p>Deletes go to the Recycle Bin unless you say otherwise, and critical system folders are protected.</p>
+      </div>
+      <div class="feature wide reveal">
+        <div>
+          <div class="ico" style="background:rgba(236,72,153,.14);color:#f9a8d4"><svg><use href="#photo"/></svg></div>
+          <h3>Photos &amp; videos, minus the copies</h3>
+          <p>A fast gallery of every picture and clip on the drive, grouped by month or folder, with a timeline, a full-screen viewer and filters for screenshots, blurry shots and large videos. PrismDisk looks at what each photo actually shows, so the copy a chat app shrank, re-compressed, rotated or renamed still lands next to the original, and it suggests the best one to keep.</p>
+        </div>
+        <div class="sim">
+          <figure><div class="ph"><b>BEST</b></div><figcaption><span>IMG_0412.jpg</span>4000×3000 · 3.8 MB</figcaption></figure>
+          <figure><div class="ph soft mark"></div><figcaption><span>IMG-WA0007.jpg</span>1600×1200 · 210 KB</figcaption></figure>
+          <figure><div class="ph rot mark"></div><figcaption><span>received_1.jpg</span>1200×1600 · 190 KB</figcaption></figure>
+        </div>
+      </div>
+      <div class="feature reveal">
+        <div class="ico" style="background:rgba(244,63,94,.14);color:#fda4af"><svg><use href="#lock"/></svg></div>
+        <h3>Protects encrypted vaults</h3>
+        <p>VeraCrypt and TrueCrypt containers are recognized, even when renamed, and deleting one takes an extra confirmation.</p>
       </div>
       <div class="feature reveal">
         <div class="ico" style="background:rgba(14,165,233,.15);color:#7dd3fc"><svg><use href="#refresh"/></svg></div>
@@ -388,7 +417,8 @@ footer .links { margin-left: auto; }
         <h3><span style="background:rgba(16,185,129,.14);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)">ONLY IN PRISMDISK</span></h3>
         <ul>
           <li><svg style="color:var(--mint)"><use href="#check"/></svg>Sunburst view and smooth zooming</li>
-          <li><svg style="color:var(--mint)"><use href="#check"/></svg>Duplicate finder ranked by wasted space</li>
+          <li><svg style="color:var(--mint)"><use href="#check"/></svg>Content-based duplicate finder, so renamed copies count too</li>
+          <li><svg style="color:var(--mint)"><use href="#check"/></svg>Photo and video gallery that finds re-sent and re-compressed copies</li>
           <li><svg style="color:var(--mint)"><use href="#check"/></svg>Smart cleanup of caches and temp folders</li>
           <li><svg style="color:var(--mint)"><use href="#check"/></svg>“Older than” filters for stale files</li>
           <li><svg style="color:var(--mint)"><use href="#check"/></svg>“Analyze with PrismDisk” in Explorer's right-click menu</li>

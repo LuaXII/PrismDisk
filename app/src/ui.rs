@@ -22,7 +22,7 @@ enum A {
     Reveal(u32),
 }
 
-fn child(ui: &mut Ui, rect: Rect) -> Ui {
+pub(crate) fn child(ui: &mut Ui, rect: Rect) -> Ui {
     ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::top_down(Align::Min)))
 }
 
@@ -74,6 +74,7 @@ pub(crate) fn prism_bar(painter: &egui::Painter, rect: Rect, radius: f32) {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
+        self.thumbs.begin();
         self.keys(ctx);
         egui::CentralPanel::default().frame(egui::Frame::new().fill(BG)).show(ctx, |ui| {
             let full = ui.max_rect();
@@ -99,6 +100,7 @@ impl eframe::App for App {
             }
         });
         self.overlays(ctx);
+        self.thumbs.end();
     }
 }
 
@@ -109,7 +111,7 @@ impl App {
             if esc {
                 return;
             }
-            if enter {
+            if enter && m.ack.as_ref().map(|a| a.1).unwrap_or(true) {
                 self.run_modal_action(m.action);
                 return;
             }
@@ -122,13 +124,17 @@ impl App {
             }
             return;
         }
-        if esc {
+        if esc && self.media.lightbox.is_none() {
             self.menu = None;
         }
         if f5 {
             if let Some((k, t)) = self.last_scan.clone() {
                 self.start_scan(&k, &t);
             }
+        }
+        if self.tab == Tab::Media && !self.home && self.info.is_some() && self.scan.is_none() && !ctx.wants_keyboard_input() {
+            self.media_keys(ctx);
+            return;
         }
         if self.scan.is_some() || self.home || self.info.is_none() || ctx.wants_keyboard_input() {
             return;
@@ -485,6 +491,10 @@ impl App {
         let max_vis = (panes.height() - 160.0 - 2.0 * gap).max(140.0);
         let vis_h = if self.vis_h <= 0.0 { panes.height() * 0.38 } else { self.vis_h }.clamp(140.0, max_vis.max(140.0)).min(panes.height() - 200.0).max(120.0);
         let top_h = panes.height() - vis_h - 2.0 * gap;
+        if self.tab == Tab::Media {
+            self.list_panel(ui, panes);
+            return;
+        }
         let list = Rect::from_min_size(panes.min, vec2(panes.width() - right_w - gap, top_h));
         let types = Rect::from_min_size(pos2(list.right() + gap, panes.top()), vec2(right_w, top_h));
         let visual = Rect::from_min_max(pos2(panes.left(), panes.bottom() - vis_h), panes.max);
@@ -620,8 +630,13 @@ impl App {
         hline(&p, rect.left(), rect.right(), tabs_r.bottom() - 1.0, line());
         let mut x = rect.left() + 8.0;
         let pill = if self.clean_pill > 0 { Some(fmt_bytes(self.clean_pill)) } else { None };
-        let tabs: [(Tab, Icon, &str); 4] =
-            [(Tab::Tree, icons::TREE, "Tree"), (Tab::Search, icons::SEARCH, "Largest & Search"), (Tab::Dups, icons::DUP, "Duplicates"), (Tab::Clean, icons::SPARKLE, "Cleanup")];
+        let tabs: [(Tab, Icon, &str); 5] = [
+            (Tab::Tree, icons::TREE, "Tree"),
+            (Tab::Search, icons::SEARCH, "Largest & Search"),
+            (Tab::Dups, icons::DUP, "Duplicates"),
+            (Tab::Clean, icons::SPARKLE, "Cleanup"),
+            (Tab::Media, icons::PHOTO, "Photos & Videos"),
+        ];
         for (tab, ic, label) in tabs {
             let mut w = 12.0 + 14.0 + 7.0 + text_w(ui, label, sb(12.0)) + 12.0;
             let pill_w = if tab == Tab::Clean { pill.as_ref().map(|s| text_w(ui, s, monob(10.0)) + 12.0 + 7.0).unwrap_or(0.0) } else { 0.0 };
@@ -659,6 +674,7 @@ impl App {
             Tab::Search => self.search_tab(ui, body),
             Tab::Dups => self.dups_tab(ui, body),
             Tab::Clean => self.clean_tab(ui, body),
+            Tab::Media => self.media_tab(ui, body),
         }
     }
 
@@ -975,22 +991,49 @@ impl App {
         let tb = Rect::from_min_size(body.min, vec2(body.width(), 51.0));
         hline(&p, body.left(), body.right(), tb.bottom() - 1.0, line());
         let inner = tb.shrink2(vec2(12.0, 10.0));
-        let g = rich(ui, &[("Files with the same name ", f(12.0), MUTED), ("and", egui::FontId::new(12.0, egui::FontFamily::Proportional), MUTED), (" exact size, likely copies. Review before deleting.", f(12.0), MUTED)], inner.width() - 130.0);
-        p.galley(pos2(inner.left(), inner.center().y - g.size().y / 2.0), g, MUTED);
+        let mut left = hchild(ui, inner);
+        if let Some(i) = segmented(&mut left, "dupmode", &[("Same content", None), ("Same name & size", None)], if self.dup_content { 0 } else { 1 }, true) {
+            let want = i == 0;
+            if want != self.dup_content {
+                self.dup_content = want;
+                self.load_dups();
+            }
+        }
+        let seg_right = left.min_rect().right();
         let mut row = ui.new_child(UiBuilder::new().max_rect(inner).layout(Layout::right_to_left(Align::Center)));
         let s = select_btn(&mut row, DUP_MINS[self.dup_min].1, 100.0);
         if s.clicked() {
             self.menu = Some(Menu { pos: s.rect.left_bottom() + vec2(0.0, 4.0), kind: MenuKind::DupMin, opened: self.ctx.input(|i| i.time) });
         }
+        let note = if self.dup_content { "Byte-for-byte identical files, whatever they are called." } else { "Files with the same name and size, likely copies." };
+        let note_w = row.min_rect().left() - seg_right - 24.0;
+        if note_w > 60.0 {
+            text(ui, &p, pos2(seg_right + 12.0, inner.center().y), Align2::LEFT_CENTER, note, f(12.0), MUTED, note_w);
+        }
         let list = Rect::from_min_max(pos2(body.left(), tb.bottom()), body.max).shrink(8.0);
         let mut c = child(ui, list);
         let Some(groups) = self.dups.clone() else {
-            p.text(list.center_top() + vec2(0.0, 56.0), Align2::CENTER_CENTER, "Looking for duplicates…", f(13.0), DIM);
+            let msg = match &self.dup_job {
+                Some(j) => {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+                    let (d, t) = (j.done.load(std::sync::atomic::Ordering::Relaxed), j.total.load(std::sync::atomic::Ordering::Relaxed));
+                    if t > 0 {
+                        let bar = Rect::from_center_size(list.center_top() + vec2(0.0, 82.0), vec2(260.0, 5.0));
+                        p.rect_filled(bar, 3, white(0.07));
+                        prism_bar(&p, Rect::from_min_size(bar.min, vec2((260.0 * d as f32 / t.max(1) as f32).clamp(5.0, 260.0), 5.0)), 2.5);
+                        format!("Comparing file contents… {} of {}", fmt_bytes(d), fmt_bytes(t.max(d)))
+                    } else {
+                        "Looking for files of the same size…".to_string()
+                    }
+                }
+                None => "Looking for duplicates…".to_string(),
+            };
+            p.text(list.center_top() + vec2(0.0, 56.0), Align2::CENTER_CENTER, msg, f(13.0), DIM);
             return;
         };
         if groups.is_empty() {
             p.text(list.center_top() + vec2(0.0, 48.0), Align2::CENTER_CENTER, "No likely duplicates", sb(13.0), MUTED);
-            p.text(list.center_top() + vec2(0.0, 68.0), Align2::CENTER_CENTER, "Nothing with the same name and size above the threshold.", f(12.5), DIM);
+            p.text(list.center_top() + vec2(0.0, 68.0), Align2::CENTER_CENTER, "Nothing identical above the size threshold.", f(12.5), DIM);
             return;
         }
         let mut actions = Vec::new();
@@ -1435,6 +1478,9 @@ impl App {
     }
 
     fn overlays(&mut self, ctx: &egui::Context) {
+        if self.tab == Tab::Media && !self.home {
+            self.lightbox_ui(ctx);
+        }
         if self.about {
             self.about_ui(ctx);
         }
@@ -1559,7 +1605,7 @@ impl App {
             }
             MenuKind::DupMin => {
                 for (i, (_, l)) in DUP_MINS.iter().enumerate() {
-                    items.push(Item::Act(["0", "1", "2"][i], None, l.to_string(), (i == self.dup_min).then_some("✓"), false));
+                    items.push(Item::Act(["0", "1", "2", "3"][i], None, l.to_string(), (i == self.dup_min).then_some("✓"), false));
                 }
                 width = 150.0;
             }
@@ -1658,6 +1704,7 @@ impl App {
         let Some(m) = &self.modal else { return };
         let screen = ctx.screen_rect();
         let mut result: Option<bool> = None;
+        let mut flip_ack = false;
         egui::Area::new(Id::new("modal")).order(Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
             ui.interact(screen, Id::new("modal-block"), Sense::click_and_drag());
             let p = ui.painter();
@@ -1672,7 +1719,9 @@ impl App {
             parts.push((m.body.as_str(), f(12.5), MUTED));
             let body_g = rich(ui, &parts, iw);
             let list_h = if m.list.is_empty() { 0.0 } else { (m.list.len() as f32 * 19.0 + 12.0).min(160.0) + 10.0 };
-            let h = 26.0 + 46.0 + 14.0 + 22.0 + 8.0 + body_g.size().y + list_h + 20.0 + 38.0 + 26.0;
+            let ack_g = m.ack.as_ref().map(|(label, _)| rich(ui, &[(label.as_str(), f(12.5), TEXT)], iw - 28.0));
+            let ack_h = ack_g.as_ref().map(|g| g.size().y.max(18.0) + 14.0).unwrap_or(0.0);
+            let h = 26.0 + 46.0 + 14.0 + 22.0 + 8.0 + body_g.size().y + list_h + ack_h + 20.0 + 38.0 + 26.0;
             let card = Rect::from_center_size(screen.center(), vec2(w, h));
             shadow(p, card, 20, 80, 40, Color32::from_black_alpha(215));
             theme::grad_rrect(p, card, 20.0, |pt| lerp(SURFACE2, SURFACE, (pt.y - card.top()) / card.height()));
@@ -1683,7 +1732,7 @@ impl App {
             let (bg, st, fg) = if m.danger { (rgba(0xf43f5e, 0.14), rgba(0xf43f5e, 0.3), hex(0xfb7185)) } else { (rgba(0x10b981, 0.14), rgba(0x10b981, 0.3), MINT) };
             p.rect_filled(ib, 14, bg);
             p.rect_stroke(ib, 14, Stroke::new(1.0_f32, st), StrokeKind::Inside);
-            icons::paint(ui, if m.danger { icons::TRASH } else { icons::SPARKLE }, Rect::from_center_size(ib.center(), vec2(22.0, 22.0)), fg);
+            icons::paint(ui, if m.lock { icons::LOCK } else if m.danger { icons::TRASH } else { icons::SPARKLE }, Rect::from_center_size(ib.center(), vec2(22.0, 22.0)), fg);
             y += 46.0 + 14.0;
             text(ui, p, pos2(x, y), Align2::LEFT_TOP, &m.title, sb(16.0), TEXT, iw);
             y += 30.0;
@@ -1707,8 +1756,22 @@ impl App {
                 }
                 y += list_h;
             }
-            let _ = y;
-            let ok = BtnOpts { label: &m.ok, icon: None, kind: if m.danger { Btn::Danger } else { Btn::Success }, small: false, enabled: true };
+            if let (Some((_, on)), Some(g)) = (&m.ack, ack_g) {
+                let gh = g.size().y.max(18.0);
+                let r = Rect::from_min_size(pos2(x, y + 4.0), vec2(iw, gh));
+                let resp = ui.interact(r, Id::new("m-ack"), Sense::click());
+                if resp.clicked() {
+                    flip_ack = true;
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let p = ui.painter();
+                checkbox(p, Rect::from_min_size(r.min, vec2(18.0, 18.0)), *on, hex(0xf43f5e));
+                p.galley(pos2(x + 28.0, y + 4.0 + (18.0 - g.size().y).max(0.0) / 2.0), g, TEXT);
+            }
+            let acked = m.ack.as_ref().map(|a| a.1).unwrap_or(true);
+            let ok = BtnOpts { label: &m.ok, icon: None, kind: if m.danger { Btn::Danger } else { Btn::Success }, small: false, enabled: acked };
             let cancel = BtnOpts { label: "Cancel", icon: None, kind: Btn::Ghost, small: false, enabled: true };
             let ok_sz = btn_size(ui, &ok);
             let c_sz = btn_size(ui, &cancel);
@@ -1718,10 +1781,15 @@ impl App {
             if btn_at(ui, cr, Id::new("m-cancel"), &cancel).clicked() {
                 result = Some(false);
             }
-            if btn_at(ui, okr, Id::new("m-ok"), &ok).clicked() {
+            if btn_at(ui, okr, Id::new("m-ok"), &ok).clicked() && acked {
                 result = Some(true);
             }
         });
+        if flip_ack {
+            if let Some((_, on)) = self.modal.as_mut().and_then(|m| m.ack.as_mut()) {
+                *on = !*on;
+            }
+        }
         match result {
             Some(true) => {
                 if let Some(m) = self.modal.take() {

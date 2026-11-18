@@ -355,6 +355,53 @@ impl Tree {
         }
     }
 
+    pub fn walk(&self, start: u32, mut f: impl FnMut(u32, &str, bool) -> bool) {
+        let mut stack = vec![start];
+        while let Some(id) = stack.pop() {
+            let dir = self.nodes[id as usize].is_dir();
+            if f(id, self.name(id), dir) && dir {
+                stack.extend(self.children(id));
+            }
+        }
+    }
+
+    pub fn content_candidates(&self, start: u32, min_size: u64) -> Vec<crate::hashing::FileRef> {
+        let mut by_size: HashMap<u64, Vec<u32>> = HashMap::new();
+        let windows = self.find_path(&format!("{}\\Windows", self.root_path.trim_end_matches('\\')));
+        let mut stack = vec![start];
+        while let Some(id) = stack.pop() {
+            let n = &self.nodes[id as usize];
+            if n.is_dir() {
+                if n.size >= min_size && Some(id) != windows {
+                    stack.extend(self.children(id));
+                }
+            } else if n.size >= min_size {
+                by_size.entry(n.size).or_default().push(id);
+            }
+        }
+        by_size
+            .into_values()
+            .filter(|v| v.len() > 1)
+            .flatten()
+            .map(|id| {
+                let n = &self.nodes[id as usize];
+                crate::hashing::FileRef { id, path: self.path(id), size: n.size, modified: n.modified }
+            })
+            .collect()
+    }
+
+    pub fn files_where(&self, start: u32, limit: usize, keep: impl Fn(&str, u64) -> bool) -> Vec<(String, u64, u64)> {
+        let mut out = Vec::new();
+        self.walk_paths(start, |id, path| {
+            let n = &self.nodes[id as usize];
+            if !n.is_dir() && out.len() < limit && keep(self.name(id), n.size) {
+                out.push((path.to_string(), n.size, n.alloc));
+            }
+            out.len() < limit
+        });
+        out
+    }
+
     pub fn find(
         &self,
         start: u32,

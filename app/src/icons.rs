@@ -30,6 +30,12 @@ svg!(BOLT, "bolt", r##"<path fill="#fff" d="M13.5 2 4 14h7l-1.5 8L19 10h-7z"/>"#
 svg!(SEARCH, "search", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" d="m21 21-5.2-5.2M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"/>"##);
 svg!(TREE, "tree", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h6M4 5v14h6M4 12h6M14 5h6M14 12h6M14 19h6"/>"##);
 svg!(COPY, "copy", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" d="M9 9h10v11H9zM5 15V4h10"/>"##);
+svg!(LOCK, "lock", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1zM8 11V7.5a4 4 0 0 1 8 0V11M12 15v2"/>"##);
+svg!(PHOTO, "photo", r##"<rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="8.5" cy="9.5" r="1.8" fill="#fff"/><path fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" d="m21 16-5.5-5.5L5 20"/>"##);
+svg!(PLAY, "play", r##"<path fill="#fff" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>"##);
+svg!(CHECK, "check", r##"<path fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/>"##);
+svg!(CHEV_LEFT, "chev-left", r##"<path fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m15 6-6 6 6 6"/>"##);
+svg!(VIDEO, "video", r##"<rect x="3" y="6" width="13" height="12" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><path fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" d="m16 10.5 5-3v9l-5-3z"/>"##);
 svg!(TRASH, "trash", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>"##);
 svg!(SPARKLE, "sparkle", r##"<path fill="#fff" d="M12 2c.4 3.6 2.4 5.6 6 6-3.6.4-5.6 2.4-6 6-.4-3.6-2.4-5.6-6-6 3.6-.4 5.6-2.4 6-6zM18.5 14c.2 1.8 1.2 2.8 3 3-1.8.2-2.8 1.2-3 3-.2-1.8-1.2-2.8-3-3 1.8-.2 2.8-1.2 3-3z"/>"##);
 svg!(DUP, "dup", r##"<path fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" d="M8 8h11v13H8zM5 16V3h11"/><path stroke="#fff" stroke-width="2" stroke-linecap="round" d="M11.5 14.5h4"/>"##);
