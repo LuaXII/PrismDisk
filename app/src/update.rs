@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 pub const REPO: &str = "LuaXII/PrismDisk";
-pub const WEBSITE: &str = "https://luaxii.github.io/PrismDisk/";
+pub const WEBSITE: &str = "https://prismdisk.vercel.app/";
 pub const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 
 #[derive(Clone, Debug)]

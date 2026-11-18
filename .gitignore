@@ -5,3 +5,6 @@
 /nul
 /prismdisk_modern_disk_space_analyzer.html
 *.part
+
+.vercel
+/.vercel/

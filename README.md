@@ -86,7 +86,7 @@ Installed copies of PrismDisk check the latest GitHub release on launch, downloa
 
 ## Website
 
-The download site lives in `docs/` and is plain static HTML. It is served by GitHub Pages at https://luaxii.github.io/PrismDisk/ and can also be deployed to Vercel as-is (`vercel.json` points Vercel at `docs/`, no build step). The download button, version and changelog are read live from GitHub releases, with `docs/CHANGELOG.md` as a fallback.
+The download site lives in `docs/` and is plain static HTML. It is live at https://prismdisk.vercel.app/ (Vercel, configured by `vercel.json` with `docs/` as the output and no build step) and mirrored on GitHub Pages at https://luaxii.github.io/PrismDisk/. The download button, version and changelog are read live from GitHub releases, with `docs/CHANGELOG.md` as a fallback.
 
 ## License
 
